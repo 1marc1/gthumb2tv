@@ -1,6 +1,6 @@
 # gthumb2tv
 ## Prerequisites
-The following is a list of additional software that is required in order to successfully run gthumb2tv. I have listed the version that are installed on my Ubuntu 14.04 machine as I know these versions work. If you have a different version of the software from that listed below, it is not to say that your version does not work.
+The following is a list of additional software that is required in order to successfully run gthumb2tv. I have listed the versions that are installed on my Ubuntu 14.04 machine as I know these versions work. If you have a different version of the software from that listed below, it is not to say that your version does not work.
 * gthumb 3.2.7
 * convert (available in ImageMagick 6.7.7-10 2016-06-01 Q16)
 * rsync 3.1.0
