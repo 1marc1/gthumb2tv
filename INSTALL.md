@@ -3,6 +3,7 @@
 The following is a list of additional software that is required in order to successfully run gthumb2tv. I have listed the versions that are installed on my Ubuntu 14.04 machine as I know these versions work. If you have a different version of the software from that listed below, it is not to say that your version does not work.
 * gthumb 3.2.7
 * convert (available in ImageMagick 6.7.7-10 2016-06-01 Q16)
+* identify (available in ImageMagick 6.7.7-10 2016-06-01 Q16)
 * rsync 3.1.0
 * comm (GNU coreutils) 8.21
 * diff (GNU diffutils) 3.3
@@ -13,7 +14,7 @@ After you have downloaded the latest version (see README.md for download locatio
 * gthumb2tv.cfg   <--- configuration file
 * gthumb2tv       <--- program file
 
-We need to make the program file executable and place it in a location what is convenient for you to execute. The configuration file should be placed in the root of your home directory.
+We need to make the program file executable and place it in a location that is convenient for you to execute. The configuration file should be placed in the root of your home directory.
 
 For example:
 ~~~~
@@ -30,4 +31,4 @@ For example:
 ~~~~
 
 ## Configuration
-Now we need to update the configuration file.
+For details on configuring and using gthumb2tv see the user manual.
