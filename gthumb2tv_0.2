@@ -1,0 +1,664 @@
+#!/bin/bash
+
+#############
+# VARIABLES #
+#############
+
+source ~/gthumb2tv.cfg
+
+
+#############
+# FUNCTIONS #
+#############
+
+# FUNCTION to log data, while adding a time stamp.
+function fLOG {
+  while IFS= read -r line; do
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $line" >> ${LOGFILE}
+  done
+}
+
+# FUNCTION to show a list of libraries and get user input on which source
+# library to synchronise.
+function fGETSRCLIBRARY {
+  # Go to default (base) directory containing catalog files. Initialise counter.
+  pushd "${DEFCATDIR}" > /dev/null
+  COUNT=1
+
+  # Retrieve all directories (which are libraries).
+  LIBRARYLIST=($(find . -type d))
+
+  echo List of available gThumb Libraries\:
+
+  # Loop through list of libraries. Change "." to library name <default>.
+  for i in "${LIBRARYLIST[@]}"; do
+    if [[ $i == "." ]]; then
+      echo $COUNT '- <default>'
+    else
+      # Remove first two characters from $i (e.g. change "./JC" to "JC")
+      echo $COUNT - ${i:2}
+    fi
+    ((COUNT+=1))
+  done
+
+  # Return to the directory where we came from
+  popd > /dev/null
+
+  # Read user input as to which library they wish to use.
+  read -e -i "$LIBNR" -p "Enter the number of the library you wish to syncronise: " input
+  LIBNR="${input:-$LIBNR}"
+
+  # Verify that the user entered a valid number. Translate the number into
+  # the name of the library (directory).
+
+  # Ensure entered value is an integer
+  if [[ "$LIBNR" =~ ^[0-9]+$ ]]; then
+    # Ensure number falls within range of valid numbers
+    if [ "$LIBNR" -ge 1 -a "$LIBNR" -lt $COUNT ]; then
+      if [ "$LIBNR" -eq 1 ]; then
+        # If user-entered library number is one, then SRCCATDIR is DEFCATDIR
+        SRCCATDIR=$DEFCATDIR
+      else
+        # In other cases, we need to add the name of the library to the base
+        # (default) subdirectory name.
+        SRCCATDIR=$DEFCATDIR/${LIBRARYLIST[(($LIBNR-1))]:2}
+      fi
+      echo "Determined that SRCCATDIR is set to ${SRCCATDIR}, on the basis of end user selection." | fLOG
+    else
+      echo "$LIBNR is not a valid option."
+      exit 1
+    fi
+  else
+    echo "$LIBNR is not a valid option."
+    exit 1
+  fi
+}
+
+# FUNCTION to determine destination directory for catalog files. In other
+# words, which directory to synchronise the catalog files to.
+function fGETDSTLIBRARY {
+  # If the name of the library is empty, this indicates the default library.
+  if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == "" ]]; then
+    # We will therefore assign the first entry of DSTCATDIRS as the dest. dir.
+    DSTCATDIR=${DSTCATDIRS[0]}
+  else
+    COUNT=0
+    # Source library is not the default one. We now step through the list of
+    # user defined (via variable DSTCATDIRS) library names and destination
+    # directories.
+    for i in "${DSTCATDIRS[@]}"; do
+      # If the library selected by the user matches the currently read entry
+      # of DSTCATDIRS, then we know that the next entry of DSTCATDIRS contains
+      # the path to the destination directory for our catalogs.
+      if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == $i ]]; then
+        # Assign the destination directory.
+        DSTCATDIR=${DSTCATDIRS[(($COUNT+1))]}
+      fi
+      ((COUNT+=1))
+    done
+  fi
+
+  echo "Determined that DSTCATDIR is set to ${DSTCATDIR}, on the basis of the DSTCATDIRS array variable." | fLOG
+
+  # If DSTCATDIR is empty at this stage, it means that no entry was found in
+  # the DSTCATDIRS array. Inform the user of this and exit.
+  if [[ "${DSTCATDIR}" == "" ]]; then
+    echo "No destination directory for the catalog files could be determined."
+    echo "Please update the DSTCATDIRS variable to include your library."
+    echo "The library name that was not found in the DSTCATDIRS directory is:"
+    echo "${LIBRARYLIST[(($LIBNR-1))]:2}"
+  fi
+}
+
+# FUNCTION to determine the destination directory for albums and symlinks.
+# This function fills the TARGETDIR variable based on the end-user's selection
+# of gThumb Library.
+function fGETTARGETDIR {
+  # If the name of the library is empty, this indicates the default library.
+  if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == "" ]]; then
+    # We will therefore assign the first entry of TARGETDIRS as the dest. dir.
+    TARGETDIR=${TARGETDIRS[0]}
+  else
+    COUNT=0
+    # Source library is not the default one. We now step through the list of
+    # user defined (via variable TARGETDIRS) library names and destination
+    # directories.
+    for i in "${TARGETDIRS[@]}"; do
+      # If the library selected by the user matches the currently read entry
+      # of TARGETDIRS, then we know that the next entry of TARGETDIRS contains
+      # the path to the destination directory for our catalogs.
+      if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == $i ]]; then
+        # Assign the destination directory.
+        TARGETDIR=${TARGETDIRS[(($COUNT+1))]}
+      fi
+      ((COUNT+=1))
+    done
+  fi
+
+  echo "Determined that TARGETDIR is set to ${TARGETDIR}, on the basis of the TARGETDIRS array variable." | fLOG
+
+  # If TARGETDIR is empty at this stage, it means that no entry was found in
+  # the TARGETDIRS array. Inform the user of this and exit.
+  if [[ "${DSTCATDIR}" == "" ]]; then
+    echo "No destination directory for the album files could be determined."
+    echo "Please update the TARGETDIRS variable to include your library."
+    echo "The library name that was not found in the TARGETDIRS directory is:"
+    echo "${LIBRARYLIST[(($LIBNR-1))]:2}"
+  fi
+}
+
+# FUNCTION to synchronise photos between source and destination, as specified
+# by the user variables SRCRSYNCDIR and DSTRSYNCDIR.
+function fRSYNCPHOTOS {
+  # First let's check to ensure the source directory is readable and the
+  # destination directory is writable.
+  if [ -r "$SRCRSYNCDIR" -a -w "$DSTRSYNCDIR" ]; then
+    echo "Rsync source directory is readable and rsync destination directory is writable." | fLOG
+  else
+    echo "For the rsync process, either the source directory is not readable, or the"
+    echo "destination directory is not writable."
+    echo "Check the source directory: $SRCRSYNCDIR"
+    echo "Check the destination directory: $DSTRSYNCDIR"
+    exit 1
+  fi
+
+  echo "Starting rsync process."
+  echo "Starting rsync process." | fLOG
+  rsync -av --delete "${SRCRSYNCDIR}"/ "${DSTRSYNCDIR}" 2>&1 | fLOG
+  echo 'Finished rsync process.'
+  echo 'Finished rsync process.' | fLOG
+}
+
+# FUNCTION to process the catalog files. We will create a list of catalog files
+# at the source directory (SRCCATDIR) and destination directory (DSTCATDIR).
+# We then create a DIFF file. On the basis of the DIFF file, there can be one of
+# three situations:
+# 1) the source catalog file does not exist in the destination directory;
+# 2) the destination directory contains a catalog file that does not exist in
+#    the source directory;
+# 3) the source catalog file exists in the destination directory. In this case:
+#    - compare the source and destination catalog file.
+#    - if they are the same, do nothing.
+#    - if they differ, remove the destination catalog file and symlinks; then
+#      copy the catalog from the source and create the symlinks.
+function fPROCESSCATALOGS {
+  # We are dealing with 2 destination directories here: (a) where to write the
+  # catalog files (DSTCATDIR) and (b) where to write the symlinks to the photos
+  # that are contained within the catalog file.
+  echo "Start processing catalog files." | fLOG
+
+  # First ensure we can write to the DSTCATDIR and the base directory for the
+  # symlinks.
+  if [ -w "$(dirname {DSTCATDIR})" -a -w "$(dirname {TARGETDIR})" ]; then
+    echo "Destination catalog directory and destination symlink directory are writable." | fLOG
+    mkdir -p "${DSTCATDIR}"
+    mkdir -p "${TARGETDIR}"
+  else
+    echo "Either the destination catalog directory (DSTCATDIR) and/or the destination"
+    echo "symlink directory (TARGETDIR) are not writable."
+    exit 1
+  fi
+
+  # Now, we will create the lists of source and destination catalog files and
+  # create a /tmp/DIFF file.
+  fCREATEDIFF
+
+  echo "Start processing $NUMCATALOGS catalog files." | fLOG
+
+  #First remove any non-user-catalog files from the final /tmp/DIFF file.
+  fREMOVENONCATALOGS '/tmp/DIFF'
+
+  # Now that the DIFF file exists, let's parse it and process the results.
+  CATLOGCOUNTER=1
+  NUMCATALOGS=`cat /tmp/DIFF | wc -l`
+
+  IFS=$'\n'
+  for LINE in $(cat /tmp/DIFF); do
+	  echo -ne Processing $CATLOGCOUNTER/$NUMCATALOGS catalogs."\r"
+
+    if [[ ${LINE:0:1} == "<" ]] ; then
+      CATFILE="${LINE:2}"
+      ALBUMNAME="${CATFILE%.catalog}"
+      # Catalog file exists in source, but not in destination (situation 1)
+      # We will first copy the catalog to the destination.
+      fCOPYCATALOG
+
+      # To be sure, we will delete the symlinks from the album directory.
+      # This can be useful if you want to recreate the album dir. and symlinks.
+      # If this is a brand new catalog, this will effectively do nothing, other
+      # add an extra entry in the log.
+      fDELETESYMLINKS
+
+      # We will now create the symlinks (and an album directory) for the newly
+      # copied catalog.
+      fCREATESYMLINKS
+    fi
+
+    if [[ ${LINE:0:1} == ">" ]] ; then
+      CATFILE="${LINE:2}"
+      ALBUMNAME="${CATFILE%.catalog}"
+      # Catalog file exists in destination, but not in source (situation 2)
+      # We will first delete the catalog file from the destination.
+      fDELETECATALOG
+
+      # We will now delete the symlinks and the album directory from the
+      # TARGETDIR directory.
+      fDELETESYMLINKS
+    fi
+
+    if [ ${LINE:0:1} != "<" -a ${LINE:0:1} != ">" ]; then
+      CATFILE="${LINE}"
+      ALBUMNAME="${CATFILE%.catalog}"
+      # Catalog file exists in source and destination (situation 3)
+      # We will first compare the source with the destination catalog file.
+      fCOMPARECATALOG
+
+      # If there is a difference, we will remove the destination catalog, we
+      # will remove the destination symlinks and album directory from TARGETDIR.
+      # After that, we will copy the catalog from the source; we will create
+      # the symlinks.
+      if [ $CATDIFF = 1 ]; then
+        echo "Differences exist in source and destination catalog. Start updating." | fLOG
+        # First, delete the catalog file from the destination.
+        fDELETECATALOG
+
+        # Next, delete the symlinks and album directory from TARGETDIR.
+        fDELETESYMLINKS
+
+        # Now, copy the catalog from the source.  
+        fCOPYCATALOG
+
+        # Finally, create the symlinks and the album directory for the newly
+        # copied catalog file.
+        fCREATESYMLINKS
+      else
+        echo "No differences found in source and destination catalog." | fLOG
+      fi
+    fi
+
+    ((CATLOGCOUNTER+=1))
+  done
+  echo ""
+}
+
+#FUNCTION to create the DIFF file. This function is called by the
+#fPROCESSCATALOGS function.
+function fCREATEDIFF {
+  echo "Creating DIFF file on basis of SRCCATDIR and DSTCATDIR." | fLOG
+  ls "${SRCCATDIR}" | sort > /tmp/SRC
+  ls "${DSTCATDIR}" | sort > /tmp/DST
+
+  # Create temporary DIFF file and filter out only lines that start with < or
+  # with > and end in "catalog". Send those lines to /tmp/tDIFF.
+  diff /tmp/SRC /tmp/DST | grep [\<\>]\ .*catalog > /tmp/tDIFF
+  # Add lines that are common between SRC and DST to /tmp/tDIFF.
+  comm -12 /tmp/SRC /tmp/DST >> /tmp/tDIFF
+  # Sort the output and write to /tmp/DIFF, then remove temporary tDIFF file.
+  sort /tmp/tDIFF > /tmp/DIFF
+  rm -rf /tmp/tDIFF
+}
+
+#FUNCTION to copy a catalog file from the source to the destination.
+function fCOPYCATALOG {
+  echo "Catalog file ${CATFILE} needs to be copied to the destination as it does not exist there." | fLOG
+  cp -a "${SRCCATDIR}/${CATFILE}" "${DSTCATDIR}"
+}
+
+#FUNCTION to delete a catalog file from the destination.
+function fDELETECATALOG {
+  echo "Catalog file ${CATFILE} needs to be deleted at the destination as it does not exist at the source." | fLOG
+  rm -rf "${DSTCATDIR}/${CATFILE}"
+}
+
+#FUNCTION to compare the contents of a catalog file in the source with the
+#destination. This function fills the CATDIFF variable with either a 1 (true)
+#or a 0 (false). So if there is a difference, CATDIFF will be 1.
+function fCOMPARECATALOG {
+  echo "Catalog file ${CATFILE} needs to be compared as it exists in both locations." | fLOG
+  CATDIFF=`diff -q "${SRCCATDIR}/${CATFILE}" "${DSTCATDIR}/${CATFILE}" | wc -l`
+}
+
+#FUNCTION to first of all ensure the directory containing the symlinks (album)
+#exists. Then to create the symlinks to the original photos.
+function fCREATESYMLINKS {
+  echo "Creating symlinks for ${CATFILE}." | fLOG
+  # Ensure the directory for the album (which will contain the symlinks) exists.
+  mkdir -p "${TARGETDIR}/${ALBUMNAME}"
+
+  CURRENTLINK=1
+  TOTALLINKS=`grep 'file:///' "${DSTCATDIR}/${CATFILE}" | wc -l`
+  echo ""
+
+  # Parse the catalog file.
+  while fPARSEXML; do
+    echo -ne Processing $CURRENTLINK/$TOTALLINKS links."\r"
+    if [[ "${ENTITY:0:8}" == "file:///" ]]; then
+      # The ENTITY read from the catalog file starts with "file:///".
+      # This means the line read refers to a file belonging to the catalog.
+
+      # Change to album directory
+      pushd "${TARGETDIR}/${ALBUMNAME}" > /dev/null
+
+      # Generate the link target
+      fGENERATELINKTARGET
+
+      # Generate the link name
+      fGENERATELINKNAME
+
+      # Delete the symlink (just in case it exists), to prevent issues with ln.
+      rm -rf "${LINKNAME}"
+      # Create the actual link
+      ln -s "${LINKTARGET}" "${LINKNAME}"
+      # Go back to the directory where we came from.
+      popd > /dev/null
+      ((CURRENTLINK+=1))
+    fi
+  done < "${DSTCATDIR}/${CATFILE}"
+  echo ""
+}
+
+#FUNCTION to delete the symlinks and remove the album directory
+function fDELETESYMLINKS {
+  echo "Deleting symlinks and album directory for ${CATFILE}." | fLOG
+  rm -rf "${TARGETDIR}/${ALBUMNAME}"
+}
+
+#FUNCTION to read through catalog file (XML file).
+function fPARSEXML () {
+  local IFS=\"
+  read -d \" ENTITY CONTENT
+}
+
+#FUNCTION to generate the link target
+function fGENERATELINKTARGET {
+  LINKTARGET="${ENTITY/$SRCRSYNCDIR/}"
+  # The following changes e.g. file:///iPhone4s/103APPLE/IMG_3199.JPG to
+  # /iPhone4s/103APPLE/IMG_3199.JPG
+  # For this reason, the TARGETDIR and DSTRSYNCDIR need to be at the same
+  # base-level. E.g. /dir1/dir2/Photos and /dir1/dir2/Photo_Source
+  LINKTARGET="${LINKTARGET/'file://'/}"
+
+  # The following changes /iPhone4s/103APPLE/IMG_3199.JPG to
+  # ../../Photo_Source/iPhone4s/103APPLE/IMG3199.JPG
+  LINKTARGET='../../'"${DSTRSYNCDIR##*/}${LINKTARGET}"
+
+  # Final sanity check on the LINKTARGET variable: replace %20 for space and
+  # replace &amp; for &.
+  LINKTARGET="${LINKTARGET//'%20'/' '}"
+  LINKTARGET="${LINKTARGET//'&amp;'/'&'}"
+}
+
+#FUNCTION to generate the name of the symlink to be placed inside the album.
+function fGENERATELINKNAME {
+  # Sets the value of LINKNAME to the name of the symlink that will link it back
+	# to the original (actual) photo or video file.
+
+  # Determine if we need to restart the serial numbering. It should restart for
+  # each new album that we parse.
+  if [[ "${ALBUMNAME}" != "${OLDALBUMNAME}" ]]; then
+    SERIALNR=1
+    OLDALBUMNAME=${ALBUMNAME}
+  fi
+
+	MYDATE=""
+	#If file exists...
+	if [ -e "${LINKTARGET}" ]; then
+		#Get the file extension of the file we are reviewing...
+		FILEEXT="${LINKTARGET##*.}"
+
+		#Loop through list of extensions that can contain EXIF date/time
+		for i in "${EXIFEXT[@]}"; do
+			#If the file extension matches an extension from the array...
+			if [ "${FILEEXT^^}" == "$i" ] ; then
+				#Set MYDATE to the DateTime filed of the EXIF data (looks like:
+				#2016:04:12 09:51:12)
+				MYDATE=`identify -verbose "${LINKTARGET}" | grep 'exif:DateTime:' | cut -d ':' -f3-7`
+
+				#Set MYDATE1 to look like: 2016-04-12 09:51:12
+				MYDATE1=`echo $MYDATE | sed -e 's/:/-/g' -e 's/-/:/3g'`
+
+				#Convert the date/time into epoch (good for easy sorting by your
+        #TV/Media Centre); add serial number (for multiple items that have a
+        #date/time stamp within the same second); add the original extension.
+				LINKNAME=`date --date="${MYDATE1}" +%s`-`printf "%03d" $SERIALNR`."${LINKTARGET##*.}"
+        ((SERIALNR+=1))
+			fi
+		done
+
+		#If at this stage the MYDATE value is empty, then it means were did not
+		#get a date time from EXIF or the file extension is not on the list of
+		#files with possible EXIF data. We will therefore use the file's
+		#modification date/time.
+		if [ -z "${MYDATE}" ] ; then
+			# No Exif date/time available, use file modification date/time in epoch
+			LINKNAME=`stat -c %Y "${LINKTARGET}"`."${LINKTARGET##*.}"
+		fi
+	else
+		LINKNAME="Cannot create symlink name because file does not exist."
+    echo "Cannot create symlink name because file does not exist." | fLOG
+    echo "LINKTARGET is set to ${LINKTARGET}" | fLOG
+	fi
+}
+
+#FUNCTION to create an album based on the latest catalogs.
+function fCREATELATESTCATALOG {
+  #Start with writing some details to the screen and the log.
+  echo "Creating special album ${LATESTCATS}."
+  echo "Creating special album ${LATESTCATS}." | fLOG
+  echo "Variables for special album are: SORT000STYLE = $SORT000STYLE" | fLOG
+  echo "                                 SORT000ORDER = $SORT000ORDER" | fLOG
+
+  #Change to the directory containing the catalog files.
+  pushd $SRCCATDIR > /dev/null
+
+  #Declare our array, then find out what the user options are.
+  #The array will hold the names of the catalogs in the order that we want to
+  #include them in the "Latest Catalogs" album.
+  declare -a CATLIST
+
+  if [ $SORT000STYLE == "Edited" ] && [ $SORT000ORDER == "Ascending" ]; then
+    ls *.catalog --sort t -r > /tmp/CATLIST
+    fREMOVENONCATALOGS '/tmp/CATLIST'
+    CATLIST=`tail -n $NUMCATS /tmp/CATLIST`
+  fi
+
+  if [ $SORT000STYLE == "Edited" ] && [ $SORT000ORDER == "Descending" ]; then
+    ls *.catalog --sort t > /tmp/CATLIST
+    fREMOVENONCATALOGS '/tmp/CATLIST'
+    CATLIST=`head -n $NUMCATS /tmp/CATLIST`
+  fi
+
+  if [ $SORT000STYLE == "AlphaTOP" ] && [ $SORT000ORDER == "Ascending" ]; then
+    ls *.catalog > /tmp/CATLIST
+    fREMOVENONCATALOGS '/tmp/CATLIST'
+    CATLIST=`head -n $NUMCATS /tmp/CATLIST`
+  fi
+
+  if [ $SORT000STYLE = "AlphaTOP" ] && [ $SORT000ORDER == "Descending" ]; then
+    ls *.catalog -r > /tmp/CATLIST
+    fREMOVENONCATALOGS '/tmp/CATLIST'
+    CATLIST=`tail -n $NUMCATS /tmp/CATLIST`
+  fi
+
+  if [ $SORT000STYLE == "AlphaBOTTOM" ] && [ $SORT000ORDER == "Ascending" ]; then
+    ls *.catalog > /tmp/CATLIST
+    fREMOVENONCATALOGS '/tmp/CATLIST'
+    CATLIST=`tail -n $NUMCATS /tmp/CATLIST`
+  fi
+
+  if [ $SORT000STYLE = "AlphaBOTTOM" ] && [ $SORT000ORDER == "Descending" ]; then
+    ls *.catalog -r > /tmp/CATLIST
+    fREMOVENONCATALOGS '/tmp/CATLIST'
+    CATLIST=`head -n $NUMCATS /tmp/CATLIST`
+  fi
+
+  #Change back to the directory where we came from
+  popd > /dev/null  
+
+  if [[ "${CATLIST[0]}" == "" ]]; then
+    echo "Variable CATLIST is empty; see fCREATELATESTCATALOGS function."
+    echo "Terminating program execution."
+    echo "Variable CATLIST is empty; see fCREATELATESTCATALOGS function." | fLOG
+    exit 1
+  fi
+
+  #CATLIST now contains a sorted list of catalogs to include in the latest
+  #catalogs album. Next, we need to create the directory and then fill it with
+  #"album name intro pictures" (aka album title pages) and links to photos
+  #beloning to the albums. We need to ensure that the link names for the photo's
+  #are sequentially numbered. We can no longer use the epoch stamps due to the
+  #fact that at some point we will end up with and incorrect order of photos.
+
+  #Remove the latest catalogs directory, then re-create it so we can fill it
+  #with the current latest catalogs.
+  rm -rf "${TARGETDIR}/${LATESTCATS}"
+  mkdir -p "${TARGETDIR}/${LATESTCATS}"
+
+  #Initialise the COUNTer variable that will be used to name the files.
+  COUNT=1
+
+  #Loop through the catalogs destined for the special album
+  while read -r LINE; do
+    ALBUMNAME="${LINE%.catalog}"
+    pushd "${TARGETDIR}/${ALBUMNAME}" > /dev/null
+
+    #First create the title page.
+    fCREATETITLEPAGE
+
+    #Now create the symlinks for the special album.
+    fCOPY000SYMLINKS
+    popd > /dev/null
+
+  done <<< "$CATLIST"
+}
+
+#FUNCTION to remove line items that are not catalog files from parameter that
+#specifies a filename; which is passed to this function.
+function fREMOVENONCATALOGS {
+  #Doing an "ls *.catalog", will include things like "Last imported.catalog".
+  #This function strips that stuff out.
+  sed '/Last imported.catalog/d' "${1}" > /tmp/fREMOVENONCATALOGS1
+  sed '/Command Line.catalog/d' /tmp/fREMOVENONCATALOGS1 > /tmp/fREMOVENONCATALOGS2
+  rm "${1}"
+  mv /tmp/fREMOVENONCATALOGS2 "${1}"
+}
+
+#FUNCTION to create title pages for the "Latest Catalogs" album.
+function fCREATETITLEPAGE {
+  echo "Create title page for ${ALBUMNAME}." | fLOG
+  convert -background $LATCATBACK -fill $LATCATFONTCOLOUR -font $LATCATFONT \
+					-pointsize $LATCATFONTSIZE -size $LATCATSIZE -gravity Center \
+					caption:${ALBUMNAME} \
+					"${TARGETDIR}/${LATESTCATS}/"`printf "%08d" $COUNT`".png"
+  ((COUNT+=1))
+}
+
+#FUNCTION to create the symlinks for the "Latest Catalogs" special album.
+#Due to different sort options available for users (via the SORT000STYLE and
+#SORT000ORDER variables), we cannot use the epoch stamps used for normal albums.
+#When running this function, it is assumed we are in the directory containing
+#the symlinks for the original album.
+function fCOPY000SYMLINKS {
+  for LINKNAME in *; do
+    #Get the extension of the symlink (e.g. GIF, JPG, etc) and convert to lowercase.
+    LINKEXT="${LINKNAME##*.}"
+    LINKEXT="${LINKEXT,,}"
+
+    #If the link's extension is on the list of those to be excluded, then
+    #exclude it. Otherwise copy the link to the Latest Catalogs directory.
+    if [[ "${EXCL000}" == *"${LINKEXT}"* ]]; then
+      echo "Excluding ${LINKNAME} from Latest Catalogs, due to user specification in EXLC000 variable." | fLOG
+    else
+      cp -a "${LINKNAME}" "${TARGETDIR}/${LATESTCATS}/"`printf "%08d" $COUNT`".${LINKEXT}"
+      ((COUNT+=1))
+    fi
+  done
+}
+
+#FUNCTION to display brief usage instructions to the end user.
+function fUSAGE {
+cat << EOF
+Software that allows you to export gThumb libraries and catalogs for viewing on
+an external device, such as a TV.
+
+Usage: gthumb2tv [-s | --skiprsync ] | [-v | --version] | [-h | --help]
+
+       -s Will skip the rsync step during program execution.
+       -v Show the version of the gthumb2tv you are running.
+       -h Shows this help message.
+
+EOF
+}
+
+#FUNCTION to display the version information of gthumb2tv you are running.
+function fVERSION {
+echo "gthumb2tv version 0.2"
+}
+
+################
+# MAIN PROGRAM #
+################
+
+# Process the command line arguments.
+SKIPRSYNC="no"
+while [ "$1" != "" ]; do
+  case $1 in
+    -s | --skiprsync )  shift
+                        SKIPRSYNC="yes"
+                        ;;
+    -v | --version )    fVERSION
+                        exit
+                        ;;
+    -h | --help )       fUSAGE
+                        exit
+                        ;;
+  esac
+  shift
+done
+
+# Clear and start the logfile
+echo Program execution started. > "${LOGFILE}"
+
+# Display a list of available gThumb libraries and get user input on which
+# library they wish to synchronise. This function needs to fill the SRCCATDIR
+# variable.
+fGETSRCLIBRARY
+
+# Determine the destination directory for the catalog files. The destination
+# directory is used to copy the catalog files to. Each library (selected by the
+# user in the fGETSRCLIBRARY function) has its own set of catalog files. Each
+# catalog file is a collection of photos relating to an event. This function
+# needs to fill the DSTCATDIR variable.
+fGETDSTLIBRARY
+
+# Determine destination directory for the albums and symlink files. The name
+# of this directory is selected from a user variable array called TARGETDIRS
+# and the determined value is stored in the variable TARGETDIR. This directory
+# is the base directory under which each album will have its own subdirectory.
+# Those subdirectories will contain the symlinks to the actual photos/videos.
+fGETTARGETDIR
+
+# Now that the user interaction is over, let's start synchronising photos.
+# Keep in mind, we synchronise all photos, regardless of which library they
+# belong to; regardless of wether they are part of a catalog.
+if [[ "${SKIPRSYNC}" == "yes" ]]; then
+  echo "Skip rsync process as requested by user specified parameter -s." | fLOG
+else
+  fRSYNCPHOTOS
+fi
+
+# Next, we need to work out which catalog files need to be copied from the
+# source (SRCCATDIR) to the destination (DSTCATDIR). At the same time, we need
+# to work out which catalog files need to be deleted from the destination.
+# Lastly, we need to update catalogs that require updating.
+fPROCESSCATALOGS
+
+# Finally, if the user wants to, create a "Latest Catalogs" album.
+if [[ $NUMCATS -gt 0 ]]; then
+  echo 'Start creating the "Latest Catalogs" album.' | fLOG
+  fCREATELATESTCATALOG
+else
+  echo 'User elected not to create a "Latest Catalogs" album.' | fLOG
+fi
+
+# End of program
