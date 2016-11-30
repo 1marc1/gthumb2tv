@@ -20,4 +20,4 @@ Please see the "gthumb2tv User Manual" file for full details on how to use this 
 Please see the LICENSE file bundled with this package for licensing details.
 
 ## Contact
-Comments, requests for improvements, etc. are welcome via https://github.com/1marc1/gthumb2tv/issues.
+Comments, requests for improvements, reporting of bugs, etc. are welcome via the Github website.
