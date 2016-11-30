@@ -34,7 +34,7 @@ Complete rewrite of the original version. This version is the first version that
 * Removed limitation of having to start catalog names with three numbers.
 
 ### Known issues
-None.
+User manual still needs to be written. Limited information is available in the Github repository around the general use of gthumb2tv. Descriptions are available in the gthumb2tv.cfg file to assist users getting started.
 
 ### Limitations
 * The program requires that there is one (1) source directory containing the actual photos.
