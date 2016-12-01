@@ -38,6 +38,7 @@ User manual still needs to be written. Limited information is available in the G
 
 ### Limitations
 * The program requires that there is one (1) source directory containing the actual photos.
+* The program has not been tested with nested libraries and nested catalogs.
 
 ## Older than version 0.2
 The original and initial version of this software was built in July 2016. This version was never publicly released. Between then and the release of first publicly available version (version 0.2), a number of bug fixes and updates took place.
