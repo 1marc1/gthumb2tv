@@ -26,17 +26,23 @@ function fGETSRCLIBRARY {
   COUNT=1
 
   # Retrieve all directories (which are libraries).
-  LIBRARYLIST=($(find . -type d))
+
+  if [[ "$SKIPYEARLIBS" == "yes" ]]; then
+    find . -type d | sort | grep -v './'"[0-9][0-9][0-9][0-9]" > /tmp/LIBS
+  else
+    find . -type d | sort > /tmp/LIBS
+  fi
 
   echo List of available gThumb Libraries\:
 
   # Loop through list of libraries. Change "." to library name <default>.
-  for i in "${LIBRARYLIST[@]}"; do
-    if [[ $i == "." ]]; then
+  IFS=$'\n'
+  for LINE in $(cat /tmp/LIBS); do
+    if [[ $LINE == "." ]]; then
       echo $COUNT '- <default>'
     else
-      # Remove first two characters from $i (e.g. change "./JC" to "JC")
-      echo $COUNT - ${i:2}
+      # Remove first two characters from $LINE (e.g. change "./JC" to "JC")
+      echo $COUNT - "${LINE:2}"
     fi
     ((COUNT+=1))
   done
@@ -61,7 +67,8 @@ function fGETSRCLIBRARY {
       else
         # In other cases, we need to add the name of the library to the base
         # (default) subdirectory name.
-        SRCCATDIR=$DEFCATDIR/${LIBRARYLIST[(($LIBNR-1))]:2}
+        LIBNAME=`head -$LIBNR /tmp/LIBS | tail -1`
+        SRCCATDIR=$DEFCATDIR/${LIBNAME:2}
       fi
       echo "Determined that SRCCATDIR is set to ${SRCCATDIR}, on the basis of end user selection." | fLOG
     else
@@ -78,7 +85,7 @@ function fGETSRCLIBRARY {
 # words, which directory to synchronise the catalog files to.
 function fGETDSTLIBRARY {
   # If the name of the library is empty, this indicates the default library.
-  if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == "" ]]; then
+  if [[ "${LIBNAME:2}" == "" ]]; then
     # We will therefore assign the first entry of DSTCATDIRS as the dest. dir.
     DSTCATDIR=${DSTCATDIRS[0]}
   else
@@ -90,7 +97,7 @@ function fGETDSTLIBRARY {
       # If the library selected by the user matches the currently read entry
       # of DSTCATDIRS, then we know that the next entry of DSTCATDIRS contains
       # the path to the destination directory for our catalogs.
-      if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == $i ]]; then
+      if [[ "${LIBNAME:2}" == $i ]]; then
         # Assign the destination directory.
         DSTCATDIR=${DSTCATDIRS[(($COUNT+1))]}
       fi
@@ -106,7 +113,7 @@ function fGETDSTLIBRARY {
     echo "No destination directory for the catalog files could be determined."
     echo "Please update the DSTCATDIRS variable to include your library."
     echo "The library name that was not found in the DSTCATDIRS directory is:"
-    echo "${LIBRARYLIST[(($LIBNR-1))]:2}"
+    echo "${LIBNAME:2}"
   fi
 }
 
@@ -115,7 +122,7 @@ function fGETDSTLIBRARY {
 # of gThumb Library.
 function fGETTARGETDIR {
   # If the name of the library is empty, this indicates the default library.
-  if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == "" ]]; then
+  if [[ "${LIBNAME:2}" == "" ]]; then
     # We will therefore assign the first entry of TARGETDIRS as the dest. dir.
     TARGETDIR=${TARGETDIRS[0]}
   else
@@ -127,7 +134,7 @@ function fGETTARGETDIR {
       # If the library selected by the user matches the currently read entry
       # of TARGETDIRS, then we know that the next entry of TARGETDIRS contains
       # the path to the destination directory for our catalogs.
-      if [[ "${LIBRARYLIST[(($LIBNR-1))]:2}" == $i ]]; then
+      if [[ "${LIBNAME:2}" == $i ]]; then
         # Assign the destination directory.
         TARGETDIR=${TARGETDIRS[(($COUNT+1))]}
       fi
@@ -143,7 +150,7 @@ function fGETTARGETDIR {
     echo "No destination directory for the album files could be determined."
     echo "Please update the TARGETDIRS variable to include your library."
     echo "The library name that was not found in the TARGETDIRS directory is:"
-    echo "${LIBRARYLIST[(($LIBNR-1))]:2}"
+    echo "${LIBNAME:2}"
   fi
 }
 
@@ -592,7 +599,7 @@ EOF
 
 #FUNCTION to display the version information of gthumb2tv you are running.
 function fVERSION {
-echo "gthumb2tv version 0.2"
+echo "gthumb2tv version 0.2.1"
 }
 
 ################
