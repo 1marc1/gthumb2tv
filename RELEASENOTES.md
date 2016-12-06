@@ -22,16 +22,14 @@ The general flow of gthumb2tv is as follows:
       * create the symlinks in the directory for this catalog
 * create a special "Latest Albums" album.
 
-## Version 0.2
-Released: 1 December 2016
+## Version 0.2.1
+Released: 6 December 2016
 
 ### What's new?
-Complete rewrite of the original version. This version is the first version that is publicly available.
+The configuration file has a new variable called "SKIPYEARLIBS". When its value is set to "yes", the library selection list will not show libraries whose names are individual years.
 
 ### Resolved issues
-* Added many more functions and remarks inside the code to make the program more easily readable.
-* Added more detail to the log.
-* Removed limitation of having to start catalog names with three numbers.
+* There was an issue whereby library names containing spaces would not display properly and as a result could not be synchronised. This has now been resolved.
 
 ### Known issues
 User manual still needs to be written. Limited information is available in the Github repository around the general use of gthumb2tv. Descriptions are available in the gthumb2tv.cfg file to assist users getting started.
@@ -39,6 +37,3 @@ User manual still needs to be written. Limited information is available in the G
 ### Limitations
 * The program requires that there is one (1) source directory containing the actual photos.
 * The program has not been tested with nested libraries and nested catalogs.
-
-## Older than version 0.2
-The original and initial version of this software was built in July 2016. This version was never publicly released. Between then and the release of first publicly available version (version 0.2), a number of bug fixes and updates took place.
