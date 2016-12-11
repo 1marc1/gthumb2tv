@@ -31,4 +31,4 @@ For example:
 ~~~~
 
 ## Configuration
-For details on configuring and using gthumb2tv see the user manual.
+For details on configuring and using gthumb2tv see the [User manual](https://github.com/1marc1/gthumb2tv/wiki/User-manual).
