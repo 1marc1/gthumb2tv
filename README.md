@@ -1,5 +1,5 @@
 # gthumb2tv
-Software that allows you to export gThumb libraries and catalogs for viewing on an external device, such as a TV.
+Software that allows you to export (and keep up to date) gThumb libraries and catalogs for viewing on an external device, such as a TV.
 ## What is it?
 Most modern TVs have the ability to display images stored on a USB stick. Also, most media center solutions (such as Kodi) have the ability to show images. If you manage your photo albums with gThumb on your computer, you can then use this software export your gThumb libraries and catalogs for viewing on your TV.
 
