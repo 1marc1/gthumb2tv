@@ -11,7 +11,7 @@ Added the ability to perform "once-off" exports of user selected gThumb catalogs
 * Details on the configuration file are complete.
 
 ### Known issues
-* None
+* Program does not properly handle the situation whereby the user specifies more than one parameter, e.g. using "-s" and "-e" at the same time. The program should never be run with both these options at the same time, but it would be nice if the program would output a message to that extent, rather than starting excution.
 
 ### Limitations
 * The program requires that there is one (1) source directory containing the actual photos.
