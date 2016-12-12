@@ -8,6 +8,7 @@ The following is a list of additional software that is required in order to succ
 * comm (GNU coreutils) 8.21
 * diff (GNU diffutils) 3.3
 * bash 4.0 or later
+* sed (GNU sed) 4.2.2
 
 ## Installation
 After you have downloaded the latest version (see README.md for download location), extract the ZIP file to a temporary location. You will find the following files in the installation package:
