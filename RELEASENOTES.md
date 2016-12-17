@@ -9,6 +9,7 @@ Added the ability to perform "once-off" exports of user selected gThumb catalogs
 ### Resolved issues
 * User manual is nearly complete.
 * Details on the configuration file are complete.
+* Resolved issue where backups of catalog files were processed as well.
 
 ### Known issues
 * Program does not properly handle the situation whereby the user specifies more than one parameter, e.g. using "-s" and "-e" at the same time. The program should never be run with both these options at the same time, but it would be nice if the program would output a message to that extent, rather than starting excution.
