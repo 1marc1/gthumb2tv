@@ -2,7 +2,7 @@
 ## General
 
 ## Version 0.2.5
-Released: Work in Progress
+Released: 23 December 2016
 ### What's new?
 Added the ability to perform "once-off" exports of user selected gThumb catalogs. This is useful for bringing one or more albums on a USB key while visiting friends or family. It is also useful to quickly give someone a copy of the photos of a specific event.
 
