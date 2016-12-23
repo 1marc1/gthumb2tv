@@ -17,7 +17,8 @@ All documentation, including the user manual is available via the wiki: https://
 
 ## Installation and usage
 Please see the INSTALL file bundled with this package for details on installing this software.
-Please see the "gthumb2tv User Manual" file for full details on how to use this software.
+
+Please see the [User Manual](https://github.com/1marc1/gthumb2tv/wiki/User-Manual) for full details on how to use this software.
 
 ## Licensing
 Please see the LICENSE file bundled with this package for licensing details.

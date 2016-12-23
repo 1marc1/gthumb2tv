@@ -6,7 +6,6 @@
 
 source ~/gthumb2tv.cfg
 
-
 #############
 # FUNCTIONS #
 #############
@@ -51,7 +50,7 @@ function fGETSRCLIBRARY {
   popd > /dev/null
 
   # Read user input as to which library they wish to use.
-  read -e -i "$LIBNR" -p "Enter the number of the library you wish to syncronise: " input
+  read -e -i "$LIBNR" -p "Enter the number of the library you wish to use: " input
   LIBNR="${input:-$LIBNR}"
 
   # Verify that the user entered a valid number. Translate the number into
@@ -378,7 +377,13 @@ function fPARSEXML () {
 
 #FUNCTION to generate the link target
 function fGENERATELINKTARGET {
-  LINKTARGET="${ENTITY/$SRCRSYNCDIR/}"
+  LINKTARGET="${ENTITY}"
+
+  # Do not remove the SRCRSYNCDIR part of the LINKTARGET when we are exporting.
+  if [ $EXPORTCATS != "yes" ]; then
+    LINKTARGET="${LINKTARGET/$SRCRSYNCDIR/}"
+  fi
+
   # The following changes e.g. file:///iPhone4s/103APPLE/IMG_3199.JPG to
   # /iPhone4s/103APPLE/IMG_3199.JPG
   # For this reason, the TARGETDIR and DSTRSYNCDIR need to be at the same
@@ -386,8 +391,11 @@ function fGENERATELINKTARGET {
   LINKTARGET="${LINKTARGET/'file://'/}"
 
   # The following changes /iPhone4s/103APPLE/IMG_3199.JPG to
-  # ../../Photo_Source/iPhone4s/103APPLE/IMG3199.JPG
-  LINKTARGET='../../'"${DSTRSYNCDIR##*/}${LINKTARGET}"
+  # ../../Photo_Source/iPhone4s/103APPLE/IMG3199.JPG. We do not want to do this
+  # when we are exporting the catalogs.
+  if [ $EXPORTCATS != "yes" ]; then
+    LINKTARGET='../../'"${DSTRSYNCDIR##*/}${LINKTARGET}"
+  fi
 
   # Final sanity check on the LINKTARGET variable: replace %20 for space and
   # replace &amp; for &.
@@ -544,10 +552,10 @@ function fCREATELATESTCATALOG {
 function fREMOVENONCATALOGS {
   #Doing an "ls *.catalog", will include things like "Last imported.catalog".
   #This function strips that stuff out.
-  sed '/Last imported.catalog/d' "${1}" > /tmp/fREMOVENONCATALOGS1
-  sed '/Command Line.catalog/d' /tmp/fREMOVENONCATALOGS1 > /tmp/fREMOVENONCATALOGS2
-  rm "${1}"
-  mv /tmp/fREMOVENONCATALOGS2 "${1}"
+  sed -i '/Last imported.catalog/d' "${1}"
+  sed -i '/Command Line.catalog/d' "${1}"
+  #Remove entries that end in ~ (backup files)
+  sed -i '/~$/d' "${1}"
 }
 
 #FUNCTION to create title pages for the "Latest Catalogs" album.
@@ -582,24 +590,120 @@ function fCOPY000SYMLINKS {
   done
 }
 
+#FUNCTION to update the config file with the value of EXPORTDIR as entered by
+#the user after the user selected to perform an export of an individual (set of)
+#librar(y|ies).
+function fUPDATECFGEXPORTDIR {
+  echo "Updating EXPORTDIR variable in configuration file." | fLOG
+  sed -i 's@EXPORTDIR=.*@EXPORTDIR="'"${EXPORTDIR}"'"@' ~/gthumb2tv.cfg
+}
+
+#FUNCTION to determine which catalog(s) the user wants to export to an ad hoc
+#location.
+function fGETEXPCATS {
+  echo "Getting user input on which catalogs to export." | fLOG
+  pushd "${SRCCATDIR}"  > /dev/null
+  ls *.catalog | sort > /tmp/SRC
+  popd  > /dev/null
+
+  # Remove items from the list that are not considered user catalog files.
+  fREMOVENONCATALOGS '/tmp/SRC'
+
+  # Get user input on which catalogs
+  CONFIRMED="n"
+  while [ $CONFIRMED != "y" ]; do
+    # Print list of catalogs belonging to the selected library.
+    echo ""
+    cat /tmp/SRC
+
+    # Read user input on which catalogs to export
+    read -e -i "${EXPCATS}" -p "Enter a regular expression to select catalog(s) for export: " input
+    EXPCATS="${input:-$EXPCATS}"
+
+    # Run the grep query and present results to user to verify.
+    echo "--- Start listing ---"
+    grep -i "${EXPCATS}" /tmp/SRC
+    echo "--- End listing ---"
+    echo "The above list shows the catalogs you selected to be exported. The destination"
+    read -e -p "album directories will be overwritten. Do you want to continue? (y/n): " CONFIRMED
+  done
+
+  # At this point the user has verified the list. Let's put it in a file.
+  grep -i "${EXPCATS}" /tmp/SRC > /tmp/DST
+}
+
+#FUNCTION to export the catalogs that the user has selected. These catalogs are
+#found in /tmp/DST.
+function fEXPORT {
+  echo "Start exporting the catalogs" | fLOG
+
+  CURRENTALBUM=1
+  TOTALALBUMS=`cat /tmp/DST | wc -l`
+
+  #Loop through the catalogs to be exported
+  while read -r LINE; do
+    echo "Processing $CURRENTALBUM/$TOTALALBUMS albums."
+
+    ALBUMNAME="${LINE%.catalog}"
+    # Ensure the target directory is empty
+    rm -rf "${EXPORTDIR}/${ALBUMNAME}"
+    # Now create the target directory
+    mkdir -p "${EXPORTDIR}/${ALBUMNAME}"
+
+    CURRENTFILE=1
+    TOTALFILES=`grep 'file:///' "${SRCCATDIR}/${LINE}" | wc -l`
+
+    while fPARSEXML; do
+      echo -ne Processing $CURRENTFILE/$TOTALFILES files."\r"
+      if [[ "${ENTITY:0:8}" == "file:///" ]]; then
+        # The ENTITY read from the catalog file starts with "file:///".
+        # This means the line read refers to a file belonging to the catalog.
+
+        # Change to album directory
+        pushd "${EXPORTDIR}/${ALBUMNAME}" > /dev/null
+
+        # Make the link target on the basis of the entry in the catalog file,
+        # which is used here as the source file to copy to the export directory.
+        fGENERATELINKTARGET
+
+        # Generate the link name, which is used here as the destination for the
+        # export (aka file copy).
+        fGENERATELINKNAME
+
+        # Export the individual file to the destination.
+        cp -a "${LINKTARGET}" "${LINKNAME}"
+
+        popd > /dev/null
+        ((CURRENTFILE+=1))
+      fi
+    done < "${SRCCATDIR}/${LINE}"
+    echo ""
+    ((CURRENTALBUM+=1))
+  done < /tmp/DST
+}
+
 #FUNCTION to display brief usage instructions to the end user.
 function fUSAGE {
 cat << EOF
-Software that allows you to export gThumb libraries and catalogs for viewing on
-an external device, such as a TV.
+Software that allows you to export (and keep up to date) your gThumb libraries
+and catalogs for viewing on an external device, such as a TV.
 
-Usage: gthumb2tv [-s | --skiprsync ] | [-v | --version] | [-h | --help]
-
-       -s Will skip the rsync step during program execution.
-       -v Show the version of the gthumb2tv you are running.
-       -h Shows this help message.
+Usage: gthumb2tv [option]
+  -s, --skiprsync
+          skip the rsync step during program execution
+  -e, --export [export directory]
+          export individual albums to an ad-hoc location
+  -v, --version
+          output version information and exit
+  -h, --help
+          display this help message
 
 EOF
 }
 
 #FUNCTION to display the version information of gthumb2tv you are running.
 function fVERSION {
-echo "gthumb2tv version 0.2.1"
+  echo "gthumb2tv version 0.2.5"
 }
 
 ################
@@ -608,23 +712,70 @@ echo "gthumb2tv version 0.2.1"
 
 # Process the command line arguments.
 SKIPRSYNC="no"
+EXPORTCATS="no"
 while [ "$1" != "" ]; do
   case $1 in
-    -s | --skiprsync )  shift
-                        SKIPRSYNC="yes"
-                        ;;
-    -v | --version )    fVERSION
-                        exit
-                        ;;
-    -h | --help )       fUSAGE
-                        exit
-                        ;;
+    -s | --skiprsync )    shift
+                          SKIPRSYNC="yes"
+                          ;;
+    -e | --export )       shift
+                          EXPORTCATS="yes"
+                          DSTDIR=$1
+                          ;;
+    -v | --version )      fVERSION
+                          exit
+                          ;;
+    -h | --help )         fUSAGE
+                          exit
+                          ;;
   esac
   shift
 done
 
 # Clear and start the logfile
 echo Program execution started. > "${LOGFILE}"
+
+# Check if we are doing a once-off export of one or more catalogs.
+if [ $EXPORTCATS == "yes" ]; then
+  # If so, check if user specified a destination directory on the command line.
+  if [ "$DSTDIR" != "" ]; then
+    # If so, set the value of EXPORTDIR to what the user specified.
+    EXPORTDIR=$DSTDIR
+  else
+    # If user did not specify a destination directory, then read it from CLI.
+    # Note that EXPORTDIR can also be in the config file. If present, its value
+    # will be displayed, for the user to accept or edit.
+    read -e -i "$EXPORTDIR" -p "Enter the directory to export to: " input
+    EXPORTDIR="${input:-$EXPORTDIR}"
+
+    # Update the user entered value in the config file, if the export directory
+    # is writable.
+    if [ -w "$EXPORTDIR" ]; then
+      fUPDATECFGEXPORTDIR
+    fi
+  fi
+
+  # At this point, we have the value of EXPORTDIR. This is the base directory
+  # where we will export our photos to.
+  if [ -w "$EXPORTDIR" ]; then
+    echo "The export directory is writable." | fLOG
+  else
+    echo "The export directory is not writable. Aborting execution."
+    exit 1
+  fi
+
+  # Now, let's ask the user from which library he/she wants to export catalogs.
+  fGETSRCLIBRARY
+
+  # Next, the user needs to specify which catalogs he wants to export.
+  fGETEXPCATS
+
+  # Now we need to process the selected catalogs: find the files contained in
+  # them and copy them to the destination directory.
+  fEXPORT
+
+  exit
+fi
 
 # Display a list of available gThumb libraries and get user input on which
 # library they wish to synchronise. This function needs to fill the SRCCATDIR
